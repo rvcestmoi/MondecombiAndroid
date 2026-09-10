@@ -1,5 +1,16 @@
 # Les mondes des animaux
 
+## Version Android
+
+Le projet Android est dans [`android/`](android/README.md). Ouvrir ce dossier dans
+Android Studio puis lancer **Run**. Cette première version permet de créer un
+monde vide, de charger les mondes Python et de les explorer au doigt. Le bouton
+**Ajouter un animal** permet de photographier ou importer un dessin, de le détourer
+et de l’enregistrer dans son habitat. Le portage des squelettes animés et de la
+gestion complète des animaux reste à réaliser.
+
+## Version Python
+
 Depuis la racine du projet :
 
 ```powershell

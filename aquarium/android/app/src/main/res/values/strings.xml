@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Les mondes des animaux</string>
+    <string name="zoom_value">%1$d %%</string>
+    <string name="population">LES MONDES DES ANIMAUX · %1$d en mer · %2$d en prairie</string>
+    <string name="empty_library">Crée ton premier monde avec Nouveau monde.</string>
+    <string name="load_failed_hint">Crée un nouveau monde ou choisis une autre archive.</string>
+    <string name="scan_size">Taille %1$d %%</string>
+    <string name="scan_tolerance">Détourage %1$d</string>
+</resources>

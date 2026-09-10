@@ -1,0 +1,35 @@
+{
+  "default": "03adae95a47b4c8792e4d5107bfd3787.zip",
+  "worlds": [
+    {
+      "file": "03adae95a47b4c8792e4d5107bfd3787.zip",
+      "name": "Mon premier monde",
+      "animals": 61,
+      "sha256": "ec0563a577ac013f6781242dcf8fab85209dcb57b2b21983ac5a99274d3f71a9"
+    },
+    {
+      "file": "1795f1edc3a04f8686addaeb13b5970c.zip",
+      "name": "Mon premier monde",
+      "animals": 37,
+      "sha256": "fa21077335dd2ad1d890a286cae5d44ef0c04adba5bb0a4bfb4ffa178189b4f4"
+    },
+    {
+      "file": "5a95f9c46e2942e1b88159ec49c42c94.zip",
+      "name": "Mon premier monde",
+      "animals": 37,
+      "sha256": "9d6cda12e23476bd966af884554fa9283432badff1f2207a679e6001357155e1"
+    },
+    {
+      "file": "5bc8818e467040378be1beaed9a0abbf.zip",
+      "name": "Mon premier monde",
+      "animals": 47,
+      "sha256": "56caaca44c4557dcdff64d0b986c7e49a18a829166b697a413e188a1e9d87e46"
+    },
+    {
+      "file": "fe31f968473740589c7f1662ce19d644.zip",
+      "name": "Mon premier monde",
+      "animals": 37,
+      "sha256": "ce7addca3a374d8b66b309f242c3f9f179149eaaa6833010cce97ef57dffe59f"
+    }
+  ]
+}

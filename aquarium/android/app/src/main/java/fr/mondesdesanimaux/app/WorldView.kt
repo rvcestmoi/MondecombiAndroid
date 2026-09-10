@@ -1,0 +1,260 @@
+package fr.mondesdesanimaux.app
+
+import android.content.Context
+import android.graphics.*
+import android.os.SystemClock
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
+import android.view.View
+import android.view.ViewConfiguration
+import kotlin.math.*
+
+/** Native, continuously redrawn scene; no Python interpreter or network required. */
+class WorldView(context: Context) : View(context) {
+    val camera = WorldCamera()
+    var world: AnimalWorld? = null
+        private set
+    var playing = true
+    var autoScroll = false
+    var verticalAutoScroll = false
+    var onCameraChanged: (() -> Unit)? = null
+    private var active = false
+    private var lastFrame = 0L
+    private var elapsed = 0f
+    private var autoDirectionX = 1
+    private var autoDirectionY = 1
+    private var manualUntil = 0L
+    private var pointerId = -1
+    private var lastX = 0f
+    private var lastY = 0f
+    private var downX = 0f
+    private var downY = 0f
+    private var moved = false
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val path = Path()
+    private val rect = RectF()
+    private val scaler = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScale(detector: ScaleGestureDetector): Boolean {
+            camera.zoomAt(detector.scaleFactor, detector.focusX, detector.focusY)
+            manualNavigation()
+            moved = true
+            return true
+        }
+    })
+
+    init {
+        contentDescription = "Monde animé. Glissez pour explorer, pincez pour zoomer. Les boutons Mer, Prairie et Zoom permettent aussi la navigation."
+        isFocusable = true
+    }
+
+    fun showWorld(value: AnimalWorld) {
+        world = value
+        camera.worldWidth = value.width
+        camera.x = value.cameraX
+        camera.y = value.cameraY
+        camera.zoom = value.zoom
+        camera.clamp()
+        autoScroll = value.horizontalAuto
+        verticalAutoScroll = value.verticalAuto
+        elapsed = 0f
+        lastFrame = 0L
+        invalidate()
+    }
+
+    fun setActive(value: Boolean) {
+        active = value
+        lastFrame = 0L
+        if (value) postInvalidateOnAnimation()
+    }
+
+    fun manualNavigation() {
+        manualUntil = SystemClock.uptimeMillis() + 3000
+        invalidate()
+        onCameraChanged?.invoke()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        camera.viewportWidth = max(1, w).toFloat()
+        camera.viewportHeight = max(1, h).toFloat()
+        camera.clamp()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        canvas.drawColor(Color.rgb(18, 59, 66))
+        val scene = world
+        if (scene != null) {
+            val now = SystemClock.uptimeMillis()
+            val dt = if (lastFrame == 0L || !active) 0f else ((now - lastFrame) / 1000f).coerceAtMost(.05f)
+            lastFrame = now
+            if (playing) {
+                elapsed += dt
+                advance(scene, dt, now)
+            }
+            canvas.save()
+            canvas.translate(camera.offsetX, camera.offsetY)
+            canvas.scale(camera.scale, camera.scale)
+            canvas.translate(-camera.x, -camera.y)
+            canvas.clipRect(0f, 0f, scene.width, WorldCamera.WORLD_HEIGHT)
+            drawScenery(canvas, scene.width)
+            scene.animals.forEach { drawAnimal(canvas, it) }
+            canvas.restore()
+        }
+        if (active && isShown) postInvalidateOnAnimation()
+    }
+
+    private fun advance(scene: AnimalWorld, dt: Float, now: Long) {
+        for (animal in scene.animals) {
+            val speed = when {
+                animal.kind == "etoile" -> 9f
+                animal.kind == "meduse" -> 17f
+                animal.kind == "crabe" -> 38f
+                animal.isBird -> 85f
+                animal.habitat == "prairie" -> 35f
+                else -> 65f
+            } * animal.speed
+            animal.x += animal.direction * speed * dt
+            val margin = animal.width / 2 + 20
+            if (animal.x < margin) { animal.x = margin; animal.direction = 1 }
+            if (animal.x > scene.width - margin) { animal.x = scene.width - margin; animal.direction = -1 }
+        }
+        if (now >= manualUntil) {
+            if (autoScroll) {
+                camera.x += autoDirectionX * 90 * scene.horizontalSpeed * dt
+                if (camera.x <= 0 || camera.x >= scene.width - camera.visibleWidth) autoDirectionX *= -1
+            }
+            if (verticalAutoScroll) {
+                camera.y += autoDirectionY * 90 * scene.verticalSpeed * dt
+                if (camera.y <= 0 || camera.y >= WorldCamera.WORLD_HEIGHT - camera.visibleHeight) autoDirectionY *= -1
+            }
+            camera.clamp()
+        }
+    }
+
+    private fun fill(canvas: Canvas, color: Int, left: Float, top: Float, right: Float, bottom: Float) {
+        paint.color = color
+        canvas.drawRect(left, top, right, bottom, paint)
+    }
+
+    private fun oval(canvas: Canvas, color: Int, left: Float, top: Float, right: Float, bottom: Float) {
+        paint.color = color
+        rect.set(left, top, right, bottom)
+        canvas.drawOval(rect, paint)
+    }
+
+    private fun drawScenery(canvas: Canvas, width: Float) {
+        fill(canvas, Color.rgb(20, 120, 175), 0f, 0f, width, 700f)
+        for (x in 0..width.toInt() step 220) {
+            val offset = sin(elapsed * .5f + x) * 40
+            path.reset()
+            path.moveTo(x + offset, 0f)
+            path.lineTo(x + 100 + offset, 0f)
+            path.lineTo(x + 250f, 700f)
+            path.close()
+            paint.color = Color.argb(12, 255, 255, 255)
+            canvas.drawPath(path, paint)
+        }
+        fill(canvas, Color.rgb(194, 166, 105), 0f, 630f, width, 700f)
+        for (x in 100..width.toInt() step 325) {
+            oval(canvas, Color.rgb(90, 90, 80), x.toFloat(), 600f, x + 100f, 650f)
+        }
+        paint.color = Color.rgb(30, 120, 50)
+        paint.strokeWidth = 7f
+        paint.strokeCap = Paint.Cap.ROUND
+        for (x in 50..width.toInt() step 130) {
+            canvas.drawLine(x.toFloat(), 630f, x + sin(elapsed * 2 + x) * 10,
+                600f - ((x * 37) % 100), paint)
+        }
+        fill(canvas, Color.rgb(224, 201, 143), 0f, 700f, width, 800f)
+        fill(canvas, Color.rgb(104, 164, 84), 0f, 800f, width, 1500f)
+        for (x in -40..width.toInt() step 70) {
+            val offset = sin(elapsed * 1.5f + x * .01f) * 4
+            oval(canvas, Color.rgb(241, 232, 190), x.toFloat(), 692f + offset, x + 95f, 712f + offset)
+            oval(canvas, Color.rgb(104, 164, 84), x.toFloat(), 788f, x + 95f, 813f)
+        }
+        for (x in 110..width.toInt() step 1000) {
+            fill(canvas, Color.rgb(126, 87, 57), x - 12f, 1130f, x + 12f, 1320f)
+            paint.color = Color.rgb(59, 131, 75)
+            canvas.drawCircle(x.toFloat(), 1110f, 80f, paint)
+            paint.color = Color.rgb(79, 150, 78)
+            canvas.drawCircle(x - 35f, 1085f, 55f, paint)
+        }
+        for ((i, x) in (30..width.toInt() step 35).withIndex()) {
+            for (band in 0..3) {
+                val y = 830f + band * 170 + (i * 37) % 130
+                paint.color = Color.rgb(65, 125, 60)
+                paint.strokeWidth = 2f
+                canvas.drawLine(x.toFloat(), y, x + 2f, y - 8, paint)
+                paint.color = Color.rgb(255, 222, 135)
+                canvas.drawCircle(x + 2f, y - 9, 3f, paint)
+            }
+        }
+    }
+
+    private fun drawAnimal(canvas: Canvas, animal: WorldAnimal) {
+        val phase = elapsed * (if (animal.isBird) 5f else 2.5f) + animal.phase
+        val bob = when {
+            animal.isOnSand -> 0f
+            animal.isBird -> sin(phase) * 12
+            animal.habitat == "prairie" -> -abs(sin(phase * 1.5f)) * 3
+            else -> sin(phase) * 7
+        }
+        val y = animal.y + bob + if (animal.habitat == "prairie") WorldCamera.LAND_Y else 0f
+        if (animal.x + animal.width < camera.x || animal.x - animal.width > camera.x + camera.visibleWidth ||
+            y + animal.height < camera.y || y - animal.height > camera.y + camera.visibleHeight) return
+        canvas.save()
+        canvas.translate(animal.x, y)
+        if ((animal.direction > 0) == animal.headLeft) canvas.scale(-1f, 1f)
+        if (animal.kind == "etoile") canvas.rotate(sin(phase * .3f) * 12)
+        if (animal.kind == "meduse") canvas.scale(1f + sin(phase) * .05f, 1f - sin(phase) * .06f)
+        paint.color = Color.WHITE
+        rect.set(-animal.width / 2, -animal.height / 2, animal.width / 2, animal.height / 2)
+        canvas.drawBitmap(animal.image, null, rect, paint)
+        canvas.restore()
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        scaler.onTouchEvent(event)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                parent.requestDisallowInterceptTouchEvent(true)
+                pointerId = event.getPointerId(0)
+                lastX = event.x; lastY = event.y
+                downX = event.x; downY = event.y
+                moved = false
+                manualNavigation()
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> moved = true
+            MotionEvent.ACTION_MOVE -> {
+                val index = event.findPointerIndex(pointerId)
+                if (index >= 0) {
+                    val x = event.getX(index); val y = event.getY(index)
+                    if (abs(x - downX) + abs(y - downY) > slop) moved = true
+                    if (!scaler.isInProgress && event.pointerCount == 1 && moved) {
+                        camera.drag(x - lastX, y - lastY)
+                        manualNavigation()
+                    }
+                    lastX = x; lastY = y
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                val index = if (event.actionIndex == 0) 1 else 0
+                pointerId = event.getPointerId(index)
+                lastX = event.getX(index); lastY = event.getY(index)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (!moved && event.actionMasked == MotionEvent.ACTION_UP) performClick()
+                pointerId = -1
+                parent.requestDisallowInterceptTouchEvent(false)
+                onCameraChanged?.invoke()
+            }
+        }
+        return true
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+}
