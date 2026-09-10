@@ -1,0 +1,607 @@
+import cv2
+import pygame
+import numpy as np
+import random
+import math
+import sys
+
+# ==========================================================
+# CONFIGURATION
+# ==========================================================
+
+CAMERA_ID = 0
+
+SCREEN_WIDTH = 1200
+SCREEN_HEIGHT = 700
+
+FISH_WIDTH = 180
+
+# Plus cette valeur est grande, plus on supprime de gris clair
+WHITE_THRESHOLD = 210
+
+
+# ==========================================================
+# CAPTURE DU POISSON
+# ==========================================================
+
+def capture_fish():
+    cap = cv2.VideoCapture(CAMERA_ID)
+
+    if not cap.isOpened():
+        print("Impossible d'ouvrir la caméra.")
+        sys.exit()
+
+    print("Place la feuille avec le poisson devant la caméra.")
+    print("ESPACE = capturer")
+    print("ECHAP = quitter")
+
+    captured = None
+
+    while True:
+        ret, frame = cap.read()
+
+        if not ret:
+            continue
+
+        preview = frame.copy()
+
+        cv2.putText(
+            preview,
+            "Place le poisson dans le cadre - ESPACE pour capturer",
+            (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 0, 255),
+            2
+        )
+
+        cv2.imshow("Scanner le poisson", preview)
+
+        key = cv2.waitKey(1)
+
+        if key == 27:
+            cap.release()
+            cv2.destroyAllWindows()
+            sys.exit()
+
+        elif key == 32:
+            captured = frame.copy()
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    return captured
+
+
+# ==========================================================
+# EXTRACTION DU POISSON
+# ==========================================================
+
+def extract_fish(image):
+
+    # ------------------------------------------------------
+    # 1. Réduction des petites variations / bruit
+    # ------------------------------------------------------
+    blurred = cv2.GaussianBlur(image, (5, 5), 0)
+
+    gray = cv2.cvtColor(blurred, cv2.COLOR_BGR2GRAY)
+
+    # ------------------------------------------------------
+    # 2. Détection des traits du dessin
+    # ------------------------------------------------------
+    edges = cv2.Canny(
+        gray,
+        25,
+        90
+    )
+
+    # ------------------------------------------------------
+    # 3. Épaissir légèrement les traits pour fermer
+    #    les petits trous dans le contour du poisson
+    # ------------------------------------------------------
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE,
+        (7, 7)
+    )
+
+    edges = cv2.dilate(
+        edges,
+        kernel,
+        iterations=1
+    )
+
+    edges = cv2.morphologyEx(
+        edges,
+        cv2.MORPH_CLOSE,
+        kernel,
+        iterations=3
+    )
+
+    # ------------------------------------------------------
+    # 4. Recherche des contours
+    # ------------------------------------------------------
+    contours, _ = cv2.findContours(
+        edges,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    if not contours:
+        print("Aucun dessin détecté")
+        return None
+
+    # ------------------------------------------------------
+    # 5. On cherche le contour le plus intéressant
+    #
+    # On évite les tout petits éléments.
+    # ------------------------------------------------------
+    h_img, w_img = image.shape[:2]
+
+    centre_x = w_img / 2
+    centre_y = h_img / 2
+
+    best_contour = None
+    best_score = -1
+
+    for contour in contours:
+
+        area = cv2.contourArea(contour)
+
+        if area < 1000:
+            continue
+
+        x, y, w, h = cv2.boundingRect(contour)
+
+        cx = x + w / 2
+        cy = y + h / 2
+
+        # Distance par rapport au centre de l'image
+        distance = math.sqrt(
+            (cx - centre_x) ** 2 +
+            (cy - centre_y) ** 2
+        )
+
+        # Favorise :
+        # - les grands contours
+        # - proches du centre
+        score = area - distance * 20
+
+        if score > best_score:
+            best_score = score
+            best_contour = contour
+
+    if best_contour is None:
+        print("Impossible de trouver le poisson")
+        return None
+
+    # ------------------------------------------------------
+    # 6. Création d'un masque PLEIN
+    #
+    # C'est cette partie qui change tout :
+    # on remplit entièrement la forme du poisson.
+    # ------------------------------------------------------
+    mask = np.zeros(
+        gray.shape,
+        dtype=np.uint8
+    )
+
+    cv2.drawContours(
+        mask,
+        [best_contour],
+        -1,
+        255,
+        thickness=cv2.FILLED
+    )
+
+    # ------------------------------------------------------
+    # 7. Adoucissement léger du bord
+    # ------------------------------------------------------
+    mask = cv2.GaussianBlur(
+        mask,
+        (5, 5),
+        0
+    )
+
+    # ------------------------------------------------------
+    # 8. Bounding box du poisson
+    # ------------------------------------------------------
+    x, y, w, h = cv2.boundingRect(best_contour)
+
+    margin = 15
+
+    x1 = max(0, x - margin)
+    y1 = max(0, y - margin)
+
+    x2 = min(w_img, x + w + margin)
+    y2 = min(h_img, y + h + margin)
+
+    cropped = image[
+        y1:y2,
+        x1:x2
+    ]
+
+    cropped_mask = mask[
+        y1:y2,
+        x1:x2
+    ]
+
+    # ------------------------------------------------------
+    # 9. Création d'une image BGRA
+    # ------------------------------------------------------
+    fish = cv2.cvtColor(
+        cropped,
+        cv2.COLOR_BGR2BGRA
+    )
+
+    fish[:, :, 3] = cropped_mask
+
+    return fish
+# ==========================================================
+# CONVERSION OPENCV -> PYGAME
+# ==========================================================
+
+def cv_to_pygame(image):
+    image = cv2.cvtColor(image, cv2.COLOR_BGRA2RGBA)
+
+    image = np.rot90(image)
+    image = np.flipud(image)
+
+    surface = pygame.surfarray.make_surface(
+        image[:, :, :3]
+    )
+
+    alpha = pygame.surfarray.make_surface(
+        np.repeat(
+            image[:, :, 3][:, :, None],
+            3,
+            axis=2
+        )
+    )
+
+    surface = surface.convert_alpha()
+
+    alpha_array = pygame.surfarray.array3d(alpha)[:, :, 0]
+
+    pygame.surfarray.pixels_alpha(surface)[:] = alpha_array
+
+    return surface
+
+
+# ==========================================================
+# BULLES
+# ==========================================================
+
+class Bubble:
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.x = random.randint(20, SCREEN_WIDTH - 20)
+        self.y = SCREEN_HEIGHT + random.randint(0, 300)
+
+        self.radius = random.randint(3, 10)
+
+        self.speed = random.uniform(0.5, 2)
+
+        self.wave = random.random() * 10
+
+    def update(self):
+
+        self.y -= self.speed
+
+        self.wave += 0.03
+
+        self.x += math.sin(self.wave) * 0.3
+
+        if self.y < -20:
+            self.reset()
+
+    def draw(self, screen):
+
+        pygame.draw.circle(
+            screen,
+            (200, 230, 255),
+            (int(self.x), int(self.y)),
+            self.radius,
+            1
+        )
+
+
+# ==========================================================
+# POISSON
+# ==========================================================
+
+class Fish:
+
+    def __init__(self, image):
+
+        self.original_image = image
+
+        ratio = FISH_WIDTH / image.get_width()
+
+        new_height = int(image.get_height() * ratio)
+
+        self.image_right = pygame.transform.smoothscale(
+            image,
+            (
+                FISH_WIDTH,
+                new_height
+            )
+        )
+
+        self.image_left = pygame.transform.flip(
+            self.image_right,
+            True,
+            False
+        )
+
+        self.x = SCREEN_WIDTH / 2
+        self.y = SCREEN_HEIGHT / 2
+
+        self.speed_x = random.uniform(1.5, 3)
+        self.speed_y = random.uniform(-0.5, 0.5)
+
+        self.direction = 1
+
+        self.wave = random.uniform(0, 100)
+
+        self.target_y = random.randint(
+            100,
+            SCREEN_HEIGHT - 150
+        )
+
+    def update(self):
+
+        self.x += self.speed_x * self.direction
+
+        self.wave += 0.04
+
+        # Mouvement ondulant
+        self.y += math.sin(self.wave) * 0.5
+
+        # Tendance à rejoindre une profondeur choisie
+        difference = self.target_y - self.y
+
+        self.y += difference * 0.002
+
+        # Changement aléatoire de profondeur
+        if random.randint(0, 500) == 0:
+            self.target_y = random.randint(
+                80,
+                SCREEN_HEIGHT - 150
+            )
+
+        # Bord droit
+        if self.x > SCREEN_WIDTH - self.image_right.get_width():
+
+            self.direction = -1
+
+        # Bord gauche
+        if self.x < 0:
+
+            self.direction = 1
+
+    def draw(self, screen):
+
+        if self.direction == 1:
+            image = self.image_right
+
+        else:
+            image = self.image_left
+
+        screen.blit(
+            image,
+            (
+                int(self.x),
+                int(self.y)
+            )
+        )
+
+
+# ==========================================================
+# DECOR AQUARIUM
+# ==========================================================
+
+def draw_aquarium(screen, time):
+
+    # Eau
+    screen.fill((20, 120, 175))
+
+    # Rayons de lumière
+    overlay = pygame.Surface(
+        (SCREEN_WIDTH, SCREEN_HEIGHT),
+        pygame.SRCALPHA
+    )
+
+    for x in range(0, SCREEN_WIDTH, 220):
+
+        offset = math.sin(time * 0.0005 + x) * 40
+
+        pygame.draw.polygon(
+            overlay,
+            (255, 255, 255, 10),
+            [
+                (x + offset, 0),
+                (x + 100 + offset, 0),
+                (x + 250, SCREEN_HEIGHT)
+            ]
+        )
+
+    screen.blit(overlay, (0, 0))
+
+    # Sable
+    pygame.draw.rect(
+        screen,
+        (194, 166, 105),
+        (
+            0,
+            SCREEN_HEIGHT - 70,
+            SCREEN_WIDTH,
+            70
+        )
+    )
+
+    # Rochers
+
+    for x in [
+        100,
+        350,
+        750,
+        1000
+    ]:
+
+        pygame.draw.ellipse(
+            screen,
+            (90, 90, 80),
+            (
+                x,
+                SCREEN_HEIGHT - 100,
+                100,
+                50
+            )
+        )
+
+    # Algues
+
+    for x in range(
+        50,
+        SCREEN_WIDTH,
+        130
+    ):
+
+        height = random_seeded_height(x)
+
+        pygame.draw.line(
+            screen,
+            (30, 120, 50),
+            (
+                x,
+                SCREEN_HEIGHT - 70
+            ),
+            (
+                x + math.sin(time * 0.002 + x) * 10,
+                SCREEN_HEIGHT - height
+            ),
+            7
+        )
+
+
+def random_seeded_height(x):
+
+    return 100 + ((x * 37) % 100)
+
+
+# ==========================================================
+# PROGRAMME PRINCIPAL
+# ==========================================================
+
+def main():
+
+    # ------------------------------------------------------
+    # Scanner
+    # ------------------------------------------------------
+
+    captured = capture_fish()
+
+    fish_image_cv = extract_fish(captured)
+
+    # Sauvegarde facultative
+    cv2.imwrite(
+        "poisson_scanne.png",
+        fish_image_cv
+    )
+
+    # ------------------------------------------------------
+    # Pygame
+    # ------------------------------------------------------
+
+    pygame.init()
+
+    screen = pygame.display.set_mode(
+        (
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT
+        )
+    )
+
+    pygame.display.set_caption(
+        "Aquarium virtuel"
+    )
+
+    fish_surface = cv_to_pygame(
+        fish_image_cv
+    )
+
+    fish = Fish(
+        fish_surface
+    )
+
+    bubbles = [
+        Bubble()
+        for _ in range(40)
+    ]
+
+    clock = pygame.time.Clock()
+
+    running = True
+
+    while running:
+
+        for event in pygame.event.get():
+
+            if event.type == pygame.QUIT:
+                running = False
+
+            if event.type == pygame.KEYDOWN:
+
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+
+                # Nouveau scan avec S
+                if event.key == pygame.K_s:
+
+                    captured = capture_fish()
+
+                    fish_image_cv = extract_fish(
+                        captured
+                    )
+
+                    fish_surface = cv_to_pygame(
+                        fish_image_cv
+                    )
+
+                    fish = Fish(
+                        fish_surface
+                    )
+
+        # Aquarium
+        draw_aquarium(
+            screen,
+            pygame.time.get_ticks()
+        )
+
+        # Bulles
+        for bubble in bubbles:
+
+            bubble.update()
+            bubble.draw(screen)
+
+        # Poisson
+        fish.update()
+        fish.draw(screen)
+
+        pygame.display.flip()
+
+        clock.tick(60)
+
+    pygame.quit()
+
+
+# ==========================================================
+# DEMARRAGE
+# ==========================================================
+
+if __name__ == "__main__":
+    main()
