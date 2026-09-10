@@ -2,6 +2,7 @@ package fr.mondesdesanimaux.app
 
 import android.content.Context
 import android.graphics.*
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import kotlin.math.*
@@ -10,6 +11,11 @@ class ScanImageView(context: Context) : View(context) {
     var bitmap: Bitmap? = null
     var preview = false
     var mirrored = false
+    var animated = true
+    var speciesId = "poisson"
+    private var motion = BasicAnimation(speciesId, 0f, -1)
+    private val vertices = FloatArray(BasicAnimation.VERTEX_FLOATS)
+    private var lastFrame = 0L
     var selection = RectF(.04f, .04f, .96f, .96f)
     var onCropChanged: ((RectF) -> Unit)? = null
     private val imageRect = RectF()
@@ -48,9 +54,36 @@ class ScanImageView(context: Context) : View(context) {
             }
             row++; y += tile
         }
-        if (preview && mirrored) canvas.scale(-1f, 1f, imageRect.centerX(), imageRect.centerY())
         paint.color = Color.WHITE
-        canvas.drawBitmap(image, null, imageRect, paint)
+        if (preview && animated) {
+            if (motion.kind != speciesId) motion = BasicAnimation(speciesId, 0f, -1)
+            val now = SystemClock.uptimeMillis()
+            val running = isEnabled && hasWindowFocus() && windowVisibility == VISIBLE
+            // Animate at world size, then fit with room for hops and tail movement.
+            val animalWidth = 180f
+            val animalHeight = animalWidth * image.height / image.width
+            if (running && lastFrame != 0L) {
+                motion.advance(((now - lastFrame) / 1000f).coerceAtMost(.05f), animalWidth, animalHeight, -1)
+            }
+            lastFrame = if (running) now else 0L
+            val fit = min(w / (animalWidth * 1.5f), h / (animalHeight * 1.5f + 80f))
+            val pose = motion.pose
+            canvas.translate(imageRect.centerX(), imageRect.centerY())
+            canvas.scale(fit, fit)
+            canvas.translate(0f, pose.offsetY)
+            val anchor = if (motion.grounded) animalHeight / 2 else 0f
+            canvas.translate(0f, anchor)
+            canvas.rotate(pose.angle)
+            canvas.scale(pose.scaleX, pose.scaleY)
+            canvas.translate(0f, -anchor)
+            motion.fillMesh(vertices, animalWidth, animalHeight, !mirrored)
+            canvas.drawBitmapMesh(image, BasicAnimation.COLUMNS, BasicAnimation.ROWS, vertices, 0, null, 0, paint)
+            if (running) postInvalidateOnAnimation()
+        } else {
+            lastFrame = 0L
+            if (preview && mirrored) canvas.scale(-1f, 1f, imageRect.centerX(), imageRect.centerY())
+            canvas.drawBitmap(image, null, imageRect, paint)
+        }
         canvas.restore()
         if (!preview) {
             frame.set(imageRect.left + selection.left * w, imageRect.top + selection.top * h,
@@ -69,6 +102,29 @@ class ScanImageView(context: Context) : View(context) {
                 canvas.drawCircle(x, cy, 7 * resources.displayMetrics.density, paint)
             }
         }
+        drawHeadMarker(canvas, if (preview) imageRect else frame, !preview && mirrored)
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        lastFrame = 0L
+        if (hasWindowFocus) invalidate()
+    }
+
+    private fun drawHeadMarker(canvas: Canvas, bounds: RectF, headRight: Boolean) {
+        val density = resources.displayMetrics.density
+        val text = if (headRight) "TÊTE →" else "← TÊTE"
+        paint.textSize = 14 * density
+        paint.typeface = Typeface.DEFAULT_BOLD
+        val padding = 8 * density
+        val badgeWidth = paint.measureText(text) + padding * 2
+        val badgeHeight = 28 * density
+        val left = (if (headRight) bounds.right - badgeWidth else bounds.left).coerceIn(0f, max(0f, width - badgeWidth))
+        val top = if (bounds.top >= badgeHeight + 4 * density) bounds.top - badgeHeight - 4 * density else bounds.top + 10 * density
+        paint.color = Color.rgb(18, 59, 66)
+        canvas.drawRoundRect(left, top, left + badgeWidth, top + badgeHeight, 6 * density, 6 * density, paint)
+        paint.color = Color.rgb(255, 226, 151)
+        canvas.drawText(text, left + padding, top + badgeHeight / 2 - (paint.ascent() + paint.descent()) / 2, paint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

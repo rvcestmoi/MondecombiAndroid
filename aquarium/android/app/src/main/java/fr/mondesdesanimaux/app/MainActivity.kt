@@ -276,10 +276,11 @@ class MainActivity : Activity() {
                     "Aller à gauche" -> scene.camera.drag(scene.width / 3f, 0f)
                     "Aller à droite" -> scene.camera.drag(-scene.width / 3f, 0f)
                     else -> AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Version Android · 0.2")
+                        .setTitle("Version Android · 0.3")
                         .setMessage("Explore tes mondes Python et leurs dessins sur Android.\n\n" +
                             "Photographie ou importe un dessin, recadre-le et ajoute-le à ton monde. Les ajouts sont sauvegardés automatiquement.\n\n" +
-                            "Les animations articulées, les interactions et la modification des animaux sont encore à porter.\n\n" +
+                            "Les animaux nagent, marchent, bondissent ou battent des ailes avec des animations simples, sans squelette. " +
+                            "Les interactions et la modification des animaux restent à porter.\n\n" +
                             "La vue est mémorisée sur cet appareil. Les archives importées sont copiées dans l’application. " +
                             "Aucune donnée n’est envoyée sur Internet.")
                         .setPositiveButton("Compris", null).show()

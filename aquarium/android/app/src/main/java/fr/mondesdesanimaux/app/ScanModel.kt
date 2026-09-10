@@ -21,6 +21,7 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
     val cameraFile = File(folder, "camera.jpg")
     private val sourceFile = File(folder, "source.png")
     private val cutoutFile = File(folder, "cutout.png")
+    private val cutoutVersion = File(folder, "cutout.version")
     var source: Bitmap? = null
         private set
     var cutout: Bitmap? = null
@@ -46,7 +47,9 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
         // A pending external result must take precedence over the previous draft.
         if (!waitingCamera && !waitingPhoto && source == null && sourceFile.exists()) job {
             source = DrawingScan.decodePhoto(sourceFile)
-            if (cutoutFile.exists()) cutout = BitmapFactory.decodeFile(cutoutFile.path)
+            if (cutoutFile.exists() && cutoutVersion.exists() && cutoutVersion.readText() == "2") {
+                cutout = BitmapFactory.decodeFile(cutoutFile.path)
+            }
         }
     }
 
@@ -100,6 +103,7 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
         source = image
         cutout = null
         cutoutFile.delete()
+        cutoutVersion.delete()
         crop = RectF(.04f, .04f, .96f, .96f)
         mirrored = false
     }
@@ -119,6 +123,7 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
         job {
             val image = DrawingScan.extract(photo, selected, threshold)
             writePng(image, cutoutFile)
+            cutoutVersion.writeText("2")
             cutout = image
         }
     }
@@ -127,6 +132,7 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
         if (busy) return
         cutout = null
         cutoutFile.delete()
+        cutoutVersion.delete()
         onChanged?.invoke()
     }
 

@@ -29,6 +29,7 @@ class ScanActivity : Activity() {
     private lateinit var rotate: Button
     private lateinit var overlay: FrameLayout
     private lateinit var orientationCheck: CheckBox
+    private lateinit var headSide: Button
     private val controls = mutableListOf<View>()
     private var returning = false
 
@@ -98,6 +99,10 @@ class ScanActivity : Activity() {
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                     model.speciesId = AnimalSpecies.all[position].id
+                    if (::image.isInitialized) {
+                        image.speciesId = model.speciesId
+                        image.invalidate()
+                    }
                 }
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             }
@@ -144,6 +149,11 @@ class ScanActivity : Activity() {
             })
         }, LinearLayout.LayoutParams(0, dp(48), 1f))
         cropTools.addView(tuning)
+        headSide = button("Tête à gauche ⇄") {
+            model.mirrored = !model.mirrored
+            render()
+        }
+        cropTools.addView(headSide)
         cropTools.addView(row().apply {
             addView(button("Cadre entier") {
                 model.crop = RectF(0f, 0f, 1f, 1f); render()
@@ -161,6 +171,13 @@ class ScanActivity : Activity() {
             setOnCheckedChangeListener { _, checked -> model.mirrored = checked; image.mirrored = checked; image.invalidate() }
         }
         previewTools.addView(orientationCheck)
+        previewTools.addView(CheckBox(this).apply {
+            text = "Aperçu animé"
+            setTextColor(Color.WHITE)
+            isChecked = true
+            controls += this
+            setOnCheckedChangeListener { _, checked -> image.animated = checked; image.invalidate() }
+        })
         previewTools.addView(row().apply {
             addView(button("Revoir le cadre") { model.recrop() })
             add = button("Ajouter au monde") { model.add(intent.getFloatExtra("worldX", 600f)) }
@@ -189,8 +206,11 @@ class ScanActivity : Activity() {
         val preview = model.cutout != null
         image.bitmap = model.cutout ?: model.source
         image.preview = preview
+        image.speciesId = model.speciesId
         image.mirrored = model.mirrored
         orientationCheck.isChecked = model.mirrored
+        headSide.text = getString(if (model.mirrored) R.string.scan_head_right else R.string.scan_head_left)
+        image.contentDescription = getString(if (!preview && model.mirrored) R.string.scan_head_right_hint else R.string.scan_head_left_hint)
         image.selection = RectF(model.crop)
         image.isEnabled = !model.busy
         image.invalidate()
@@ -204,8 +224,8 @@ class ScanActivity : Activity() {
         status.setTextColor(if (model.error != null) Color.rgb(255, 210, 160) else Color.WHITE)
         status.text = model.error ?: when {
             model.busy -> "Traitement en cours…"
-            preview -> "Vérifie le dessin sur le damier. Il doit regarder vers la gauche avant l’ajout."
-            model.source != null -> "Entoure un seul animal avec le cadre, en laissant une marge de papier clair."
+            preview -> "Aperçu de l’espèce choisie, tête à gauche. Décoche « Aperçu animé » pour vérifier le détourage."
+            model.source != null -> "Place la tête du côté du repère TÊTE. Change le côté avec le bouton ⇄. Garde une marge de papier autour du dessin."
             else -> "Photographie un dessin sur papier clair, bien éclairé, ou choisis une image."
         }
     }

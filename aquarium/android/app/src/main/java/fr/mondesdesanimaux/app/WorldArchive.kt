@@ -41,6 +41,8 @@ data class WorldAnimal(
     val width = image.width * ratio
     val height = image.height * ratio
     val headLeft = original.optJSONObject("rig")?.optBoolean("head_left", true) ?: true
+    val animation = BasicAnimation(kind, phase, direction)
+    val meshVertices = FloatArray(BasicAnimation.VERTEX_FLOATS)
 }
 
 data class AnimalWorld(

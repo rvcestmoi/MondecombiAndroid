@@ -52,8 +52,11 @@ class ScanFlowTest {
                 scenario.onActivity { it.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
                 click(scenario, "Prendre une photo")
                 waitEnabled(scenario, "Détourer le dessin")
+                click(scenario, "Tête à gauche ⇄")
                 scenario.recreate()
                 waitEnabled(scenario, "Détourer le dessin")
+                // The selected front of the drawing must survive recreation.
+                click(scenario, "Tête à droite ⇄")
                 click(scenario, "Tourner ↻")
                 waitEnabled(scenario, "Détourer le dessin")
                 click(scenario, "Détourer le dessin")

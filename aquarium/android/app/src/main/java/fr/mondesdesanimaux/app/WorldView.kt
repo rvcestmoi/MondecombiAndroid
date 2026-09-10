@@ -106,14 +106,8 @@ class WorldView(context: Context) : View(context) {
 
     private fun advance(scene: AnimalWorld, dt: Float, now: Long) {
         for (animal in scene.animals) {
-            val speed = when {
-                animal.kind == "etoile" -> 9f
-                animal.kind == "meduse" -> 17f
-                animal.kind == "crabe" -> 38f
-                animal.isBird -> 85f
-                animal.habitat == "prairie" -> 35f
-                else -> 65f
-            } * animal.speed
+            animal.animation.advance(dt, animal.width, animal.height, animal.direction)
+            val speed = animal.animation.pose.speed * animal.speed
             animal.x += animal.direction * speed * dt
             val margin = animal.width / 2 + 20
             if (animal.x < margin) { animal.x = margin; animal.direction = 1 }
@@ -193,24 +187,27 @@ class WorldView(context: Context) : View(context) {
     }
 
     private fun drawAnimal(canvas: Canvas, animal: WorldAnimal) {
-        val phase = elapsed * (if (animal.isBird) 5f else 2.5f) + animal.phase
-        val bob = when {
-            animal.isOnSand -> 0f
-            animal.isBird -> sin(phase) * 12
-            animal.habitat == "prairie" -> -abs(sin(phase * 1.5f)) * 3
-            else -> sin(phase) * 7
-        }
-        val y = animal.y + bob + if (animal.habitat == "prairie") WorldCamera.LAND_Y else 0f
-        if (animal.x + animal.width < camera.x || animal.x - animal.width > camera.x + camera.visibleWidth ||
-            y + animal.height < camera.y || y - animal.height > camera.y + camera.visibleHeight) return
+        val motion = animal.animation
+        val pose = motion.pose
+        val lower = animal.height / 2 + 5
+        val upper = (if (animal.habitat == "mer" && !animal.isOnSand) 630f else 700f) - animal.height / 2
+        val localY = (animal.y + pose.offsetY).coerceIn(lower, max(lower, upper))
+        val y = localY + if (animal.habitat == "prairie") WorldCamera.LAND_Y else 0f
+        if (animal.x + animal.width * 2 < camera.x || animal.x - animal.width * 2 > camera.x + camera.visibleWidth ||
+            y + animal.height * 2 < camera.y || y - animal.height * 2 > camera.y + camera.visibleHeight) return
         canvas.save()
         canvas.translate(animal.x, y)
-        if ((animal.direction > 0) == animal.headLeft) canvas.scale(-1f, 1f)
-        if (animal.kind == "etoile") canvas.rotate(sin(phase * .3f) * 12)
-        if (animal.kind == "meduse") canvas.scale(1f + sin(phase) * .05f, 1f - sin(phase) * .06f)
+        val facing = if (abs(motion.facing) < .08f) (if (motion.facing < 0) -.08f else .08f) else motion.facing
+        canvas.scale(-facing, 1f)
+        val groundAnchor = animal.habitat == "prairie" && !animal.isBird || animal.isOnSand
+        if (groundAnchor) canvas.translate(0f, animal.height / 2)
+        canvas.rotate(pose.angle)
+        canvas.scale(pose.scaleX, pose.scaleY)
+        if (groundAnchor) canvas.translate(0f, -animal.height / 2)
         paint.color = Color.WHITE
-        rect.set(-animal.width / 2, -animal.height / 2, animal.width / 2, animal.height / 2)
-        canvas.drawBitmap(animal.image, null, rect, paint)
+        motion.fillMesh(animal.meshVertices, animal.width, animal.height, animal.headLeft)
+        canvas.drawBitmapMesh(animal.image, BasicAnimation.COLUMNS, BasicAnimation.ROWS,
+            animal.meshVertices, 0, null, 0, paint)
         canvas.restore()
     }
 

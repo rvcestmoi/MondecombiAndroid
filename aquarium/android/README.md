@@ -2,6 +2,12 @@
 
 Projet Android natif en Kotlin, premier jalon du portage du projet Python.
 
+État de la version 0.3 : repère de tête, animations sans squelette et correction
+des intérieurs transparents ajoutés au code. Les nouveaux tests sont écrits, mais
+cette révision reste à compiler et vérifier sur appareil : la validation automatique
+de la compilation a été bloquée par la limite d’utilisation. Les résultats de tests
+et l’APK déjà présents dans `build/` concernent la version précédente.
+
 ## Ouvrir et lancer
 
 1. Dans Android Studio, **Open** puis sélectionner ce dossier `android`.
@@ -45,7 +51,11 @@ Rapports : `app/build/reports/tests/testDebugUnitTest/index.html` et
 - Raccourcis **Mer**, **Plage**, **Prairie**, pause et balayages horizontal/vertical.
   La barre de boutons peut défiler horizontalement sur un petit écran.
 - Mémorisation du monde courant, de la caméra, du zoom, de la pause et des balayages.
-- Décors et dessins rendus avec Android Canvas ; déplacements et animations simples.
+- Décors et dessins rendus avec Android Canvas. Animations sans squelette : queue
+  des poissons, pulsations et tentacules des méduses, battements d’ailes, marche,
+  bonds, rotations et poses propres aux espèces. Les deux petits comportements
+  spontanés du Python sont repris sous forme de poses du dessin entier.
+  Les demi-tours sont progressifs ; la pause fige également la déformation.
 - Chargement hors du fil d’interface, erreurs récupérables, arrêt des animations
   lorsque l’application passe en arrière-plan.
 
@@ -71,11 +81,17 @@ de 16 millions de pixels. Une archive invalide ne remplace pas le monde affiché
 2. Choisir l’espèce dans la liste **Mer / Prairie**, puis **Prendre une photo** ou
    **Choisir une image**.
 3. Placer le cadre autour d’un seul dessin, avec une marge de papier clair.
-   Les quatre coins se déplacent au doigt ; on peut aussi déplacer le cadre entier.
+   Le repère **TÊTE** indique le devant. **Tête à gauche ⇄ / Tête à droite ⇄** permet
+   de changer le côté sans retourner la photo pendant le cadrage. Utiliser **Tourner**
+   si le dessin est vertical. Les quatre coins se déplacent au doigt ; on peut aussi
+   déplacer le cadre entier. Le choix d’orientation est appliqué au dessin enregistré.
 4. Appuyer sur **Détourer le dessin**. Le damier montre les zones transparentes.
 5. Si nécessaire, **Revoir le cadre** et ajuster le détourage : une valeur plus forte
    retire davantage de papier. Les zones blanches enfermées par le contour sont
-   conservées. Le composant principal est retenu, les petites taches isolées sont
+   conservées. Les petites ruptures du contour sont raccordées dans le masque ;
+   un contour coupé par le bord du cadre est fermé sur ce bord pour conserver son
+   intérieur visible. Les couleurs de la photo ne sont pas remplacées.
+   Le composant principal est retenu, les petites taches isolées sont
    éliminées. Une feuille bien éclairée et un contour fermé donnent les meilleurs
    résultats ; l’espèce est choisie par l’utilisateur.
 6. Régler la taille et cocher l’inversion si le dessin regarde à droite, puis
@@ -84,7 +100,15 @@ de 16 millions de pixels. Une archive invalide ne remplace pas le monde affiché
 Les photos de travail sont limitées à 32 Mo et réduites avant traitement. Le brouillon
 survit à une rotation ; la photo normalisée est aussi conservée temporairement pour
 la recréation du processus. Les fichiers du scan sont nettoyés après ajout ou abandon.
+Après le détourage, l’option **Aperçu animé** montre les mouvements de l’espèce
+choisie avant l’ajout au monde. La décocher affiche le dessin immobile en grand
+pour vérifier le contour. Cet aperçu utilise le même moteur que le monde et
+s’arrête lorsque l’écran perd le focus. Le PNG enregistré reste le dessin original.
+
 L’ajout n’inclut pas encore l’édition de squelette.
+Les anciens aperçus de détourage d’un brouillon sont recalculés avec cette version.
+Un animal déjà enregistré avec l’intérieur effacé doit être scanné à nouveau depuis
+la photo originale : les couleurs supprimées ne peuvent pas être récupérées du PNG.
 
 ## Vérification
 
@@ -97,6 +121,9 @@ Les tests du scan couvrent le papier blanc/gris, les couleurs pâles, les blancs
 intérieurs, la transparence, l’orientation EXIF et la reprise après retour de photo.
 Les tests d’ajout vérifient les deux habitats, la conservation des anciens dessins,
 l’absence de doublon lors d’une nouvelle tentative et la protection du ZIP en cas d’échec.
+Des tests couvrent les contours interrompus, les animaux coupés par le cadre et les
+espaces concaves à garder transparents. Les tests d’animation couvrent les 22 espèces,
+la stabilité de la tête, la normalisation gauche/droite, les demi-tours et la pause.
 
 `ScanFlowTest` est un test instrumenté pour tablette/émulateur : il simule le retour
 de la caméra, passe par les vrais écrans, recrée l’activité, détoure et sauvegarde
@@ -122,7 +149,7 @@ avec leur nombre d’animaux et empreinte SHA-256. Il ne modifie pas les origina
 7. Préparation Google Play : identité définitive, icône, signature de publication,
    AAB, fiche du store et informations de confidentialité adaptées aux fonctions finales.
 
-**Cette version 0.2 est une version de développement, pas encore le portage complet
+**Cette version 0.3 est une version de développement, pas encore le portage complet
 ni une application prête à publier.** L’identifiant `fr.mondesdesanimaux.app` est
 provisoire ; le fixer avant la première publication. Aucune clé de publication n’est
 créée ni incluse dans le dépôt. Les dessins embarqués sont des exemples de travail

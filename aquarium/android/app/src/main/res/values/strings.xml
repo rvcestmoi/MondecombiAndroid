@@ -7,4 +7,8 @@
     <string name="load_failed_hint">Crée un nouveau monde ou choisis une autre archive.</string>
     <string name="scan_size">Taille %1$d %%</string>
     <string name="scan_tolerance">Détourage %1$d</string>
+    <string name="scan_head_left">Tête à gauche ⇄</string>
+    <string name="scan_head_right">Tête à droite ⇄</string>
+    <string name="scan_head_left_hint">La tête doit être à gauche du cadre. Déplace les coins pour cadrer le dessin.</string>
+    <string name="scan_head_right_hint">La tête doit être à droite du cadre. Déplace les coins pour cadrer le dessin.</string>
 </resources>
