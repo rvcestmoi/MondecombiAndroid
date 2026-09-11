@@ -87,6 +87,11 @@ class ScanActivity : Activity() {
         scrollingRow(root, row().apply {
             addView(button("Prendre une photo") { camera() })
             addView(button("Choisir une image") { pickImage() })
+            addView(button("Dessiner un animal") {
+                model.waitingPaint = true
+                @Suppress("DEPRECATION")
+                startActivityForResult(Intent(this@ScanActivity, PaintActivity::class.java).putExtra("session", model.sessionId), PAINT)
+            })
             rotate = button("Tourner ↻") { model.rotate() }
             addView(rotate)
             addView(button("Annuler") { cancelScan() })
@@ -268,7 +273,10 @@ class ScanActivity : Activity() {
     @Deprecated("Platform result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == CAMERA) {
+        if (requestCode == PAINT) {
+            model.waitingPaint = false
+            if (resultCode == RESULT_OK) model.takePaintResult() else model.restore()
+        } else if (requestCode == CAMERA) {
             model.waitingCamera = false
             val uri = FileProvider.getUriForFile(this, "$packageName.scanfiles", model.cameraFile)
             revokeUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -309,5 +317,5 @@ class ScanActivity : Activity() {
         super.onDestroy()
     }
 
-    companion object { private const val CAMERA = 10; private const val PHOTO = 11 }
+    companion object { private const val CAMERA = 10; private const val PHOTO = 11; private const val PAINT = 12 }
 }

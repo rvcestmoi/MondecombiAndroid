@@ -33,6 +33,7 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
     var mirrored = state?.getBoolean("mirrored", false) ?: false
     var waitingCamera = state?.getBoolean("waitingCamera", false) ?: false
     var waitingPhoto = state?.getBoolean("waitingPhoto", false) ?: false
+    var waitingPaint = state?.getBoolean("waitingPaint", false) ?: false
     var busy = false
         private set
     var saved = false
@@ -45,7 +46,7 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
 
     fun restore() {
         // A pending external result must take precedence over the previous draft.
-        if (!waitingCamera && !waitingPhoto && source == null && sourceFile.exists()) job {
+        if (!waitingCamera && !waitingPhoto && !waitingPaint && source == null && sourceFile.exists()) job {
             source = DrawingScan.decodePhoto(sourceFile)
             if (cutoutFile.exists() && cutoutVersion.exists() && cutoutVersion.readText() == "2") {
                 cutout = BitmapFactory.decodeFile(cutoutFile.path)
@@ -61,6 +62,7 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
         out.putBoolean("mirrored", mirrored)
         out.putBoolean("waitingCamera", waitingCamera)
         out.putBoolean("waitingPhoto", waitingPhoto)
+        out.putBoolean("waitingPaint", waitingPaint)
         out.putFloatArray("crop", floatArrayOf(crop.left, crop.top, crop.right, crop.bottom))
     }
 
@@ -87,6 +89,20 @@ class ScanModel(private val context: Context, val worldId: String, state: Bundle
     fun takePhotoResult() {
         waitingCamera = false
         job { replaceSource(DrawingScan.decodePhoto(cameraFile)) }
+    }
+
+    fun takePaintResult() {
+        waitingPaint = false
+        job {
+            val image = BitmapFactory.decodeFile(File(folder, "paint.png").path)
+                ?: error("Dessin inaccessible.")
+            replaceSource(image)
+            // Keep every painted component and its alpha; no paper removal is needed.
+            writePng(image, cutoutFile)
+            cutoutVersion.writeText("2")
+            crop = RectF(0f, 0f, 1f, 1f)
+            cutout = image
+        }
     }
 
     private fun writePng(image: Bitmap, file: File) {

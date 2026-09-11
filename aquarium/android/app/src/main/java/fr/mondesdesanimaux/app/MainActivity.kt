@@ -29,6 +29,7 @@ class MainActivity : Activity() {
     private var currentId = ""
     private var busy = false
     private var resumed = false
+    private var editingAnimal = false
     private var pendingScanId: String? = null
     private var pendingScanHabitat: String? = null
     private var reloadAfterScan = false
@@ -83,6 +84,7 @@ class MainActivity : Activity() {
         val actions = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), 0, dp(8), 0) }
         actions.addView(button("Nouveau monde") { showNewWorld() })
         actions.addView(button("Ajouter un animal") { scanAnimal() })
+        actions.addView(button("Animaux") { showAnimals() })
         actions.addView(button("Mes mondes") { showLibrary() })
         actions.addView(button("Mer") { scene.camera.centerOn(350f); scene.manualNavigation() })
         actions.addView(button("Plage") { scene.camera.centerOn(750f); scene.manualNavigation() })
@@ -256,6 +258,145 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showAnimals() {
+        val animals = scene.world?.animals ?: return
+        if (animals.isEmpty()) {
+            AlertDialog.Builder(this).setTitle("Animaux")
+                .setMessage("Ce monde est vide. Ajoute un animal avec une photo ou une image.")
+                .setPositiveButton("Ajouter un animal") { _, _ -> scanAnimal() }
+                .setNegativeButton("Fermer", null).show()
+            return
+        }
+        val adapter = object : BaseAdapter() {
+            override fun getCount() = animals.size
+            override fun getItem(position: Int) = animals[position]
+            override fun getItemId(position: Int) = position.toLong()
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup?): View {
+                val animal = animals[position]
+                return LinearLayout(this@MainActivity).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(16), dp(8), dp(16), dp(8))
+                    addView(ImageView(this@MainActivity).apply {
+                        setImageBitmap(animal.image)
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                    }, LinearLayout.LayoutParams(dp(64), dp(64)))
+                    addView(TextView(this@MainActivity).apply {
+                        text = "${position + 1}. ${AnimalSpecies.find(animal.kind).label} · ${if (animal.habitat == "mer") "Mer" else "Prairie"}\n" +
+                            "Taille ${(animal.size * 100).toInt()} % · Vitesse ${(animal.speed * 100).toInt()} %"
+                        setPadding(dp(12), 0, 0, 0)
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
+                }
+            }
+        }
+        AlertDialog.Builder(this).setTitle("Animaux du monde")
+            .setAdapter(adapter) { _, index -> showAnimalSettings(animals[index]) }
+            .setNegativeButton("Fermer", null).show()
+    }
+
+    private fun showAnimalSettings(animal: WorldAnimal) {
+        val world = scene.world ?: return
+        val index = world.animals.filter { it.habitat == animal.habitat }.indexOfFirst { it === animal }
+        if (index < 0 || busy) return
+        val id = currentId
+        val expected = animal.original.toString()
+        var size = animal.size
+        var speed = animal.speed
+        editingAnimal = true
+        scene.setActive(false)
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(8), dp(24), 0)
+        }
+        form.addView(ImageView(this).apply {
+            setImageBitmap(animal.image)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(-1, dp(100)))
+        fun slider(name: String, initial: Float, minimum: Int, change: (Float) -> Unit) {
+            val label = TextView(this)
+            fun caption(value: Int) { label.text = "$name : $value %${if (name == "Vitesse" && value == 0) " (immobile)" else ""}" }
+            caption((initial * 100).toInt())
+            form.addView(label)
+            form.addView(SeekBar(this).apply {
+                max = 200 - minimum
+                progress = (initial * 100).toInt() - minimum
+                contentDescription = name
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+                        if (fromUser) { caption(value + minimum); change((value + minimum) / 100f) }
+                    }
+                    override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+                    override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+                })
+            }, LinearLayout.LayoutParams(-1, dp(48)))
+        }
+        slider("Taille", size, 5) { size = it }
+        slider("Vitesse", speed, 0) { speed = it }
+        val dialog = AlertDialog.Builder(this).setTitle(AnimalSpecies.find(animal.kind).label)
+            .setView(ScrollView(this).apply { addView(form) })
+            .setPositiveButton("Enregistrer") { _, _ ->
+                saveAnimalSettings(id, animal.habitat, index, expected, size, speed, false)
+            }
+            .setNegativeButton("Annuler", null).create()
+        dialog.setOnDismissListener {
+            editingAnimal = false
+            scene.setActive(resumed && !busy && !isDestroyed)
+        }
+        form.addView(Button(this).apply {
+            text = "Dupliquer cet animal"
+            isAllCaps = false
+            minHeight = dp(48)
+            setOnClickListener {
+                saveAnimalSettings(id, animal.habitat, index, expected, animal.size, animal.speed, false, true)
+                dialog.dismiss()
+            }
+        })
+        form.addView(Button(this).apply {
+            text = "Supprimer cet animal"
+            isAllCaps = false
+            setTextColor(Color.rgb(170, 35, 45))
+            minHeight = dp(48)
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity).setTitle("Supprimer cet animal ?")
+                    .setMessage("Ce dessin sera retiré de ce monde.")
+                    .setPositiveButton("Supprimer") { _, _ ->
+                        saveAnimalSettings(id, animal.habitat, index, expected, animal.size, animal.speed, true)
+                        dialog.dismiss()
+                    }
+                    .setNegativeButton("Annuler", null).show()
+            }
+        })
+        dialog.show()
+    }
+
+    private fun saveAnimalSettings(id: String, habitat: String, index: Int, expected: String,
+                                   size: Float, speed: Float, delete: Boolean, duplicate: Boolean = false) {
+        if (busy || currentId != id) return
+        saveView()
+        setBusy(true)
+        loader.execute {
+            try {
+                if (duplicate) WorldRepository.duplicateAnimal(applicationContext, id, habitat, index, expected, UUID.randomUUID().toString())
+                else WorldRepository.editAnimal(applicationContext, id, habitat, index, expected, size, speed, delete)
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        setBusy(false)
+                        load(Entry(id, "Mon monde"))
+                        Toast.makeText(this, if (duplicate) "Animal dupliqué" else if (delete) "Animal supprimé" else "Réglages enregistrés", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        setBusy(false)
+                        AlertDialog.Builder(this).setTitle("Impossible d’enregistrer")
+                            .setMessage(e.localizedMessage).setPositiveButton("Fermer", null).show()
+                    }
+                }
+            }
+        }
+    }
+
     private fun registerLocalWorld(id: String, name: String) {
         val imports = JSONArray(prefs.getString("imports", "[]"))
         imports.put(JSONObject().put("id", id).put("name", name))
@@ -280,7 +421,7 @@ class MainActivity : Activity() {
                         .setMessage("Explore tes mondes Python et leurs dessins sur Android.\n\n" +
                             "Photographie ou importe un dessin, recadre-le et ajoute-le à ton monde. Les ajouts sont sauvegardés automatiquement.\n\n" +
                             "Les animaux nagent, marchent, bondissent ou battent des ailes avec des animations simples, sans squelette. " +
-                            "Les interactions et la modification des animaux restent à porter.\n\n" +
+                            "Le bouton Animaux permet de régler leur taille et leur vitesse, ou de les supprimer.\n\n" +
                             "La vue est mémorisée sur cet appareil. Les archives importées sont copiées dans l’application. " +
                             "Aucune donnée n’est envoyée sur Internet.")
                         .setPositiveButton("Compris", null).show()
@@ -356,7 +497,7 @@ class MainActivity : Activity() {
     private fun setBusy(value: Boolean) {
         busy = value
         progress.visibility = if (value) View.VISIBLE else View.GONE
-        scene.setActive(resumed && !value)
+        scene.setActive(resumed && !value && !editingAnimal)
     }
 
     private fun loadFailed(error: Exception) {
@@ -422,7 +563,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         resumed = true
-        scene.setActive(!busy)
+        scene.setActive(!busy && !editingAnimal)
     }
 
     override fun onPause() {

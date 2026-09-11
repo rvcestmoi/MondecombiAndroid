@@ -25,7 +25,7 @@ class BasicAnimation(val kind: String, seed: Float, direction: Int) {
     private val bird = kind in birds
     private val land = kind !in sea && !bird
     val grounded: Boolean get() = land || kind == "crabe" || kind == "etoile"
-    private val baseSpeed = when (kind) {
+    val baseSpeed = when (kind) {
         "etoile" -> 9f; "meduse" -> 17f; "crabe" -> 38f; "tortue" -> 40f
         "lapin" -> 65f; "elephant", "rhinoceros", "vache" -> 28f
         "cheval", "zebre" -> 65f
@@ -34,7 +34,7 @@ class BasicAnimation(val kind: String, seed: Float, direction: Int) {
 
     init { pose.speed = baseSpeed }
 
-    fun advance(dt: Float, width: Float, height: Float, direction: Int) {
+    fun advance(dt: Float, width: Float, height: Float, direction: Int, social: Boolean = false) {
         if (!dt.isFinite() || dt <= 0f) return
         val delta = dt.coerceAtMost(.1f)
         val hz = when (kind) { "moineau" -> 4.5f; "aigle" -> 1.4f; "perroquet" -> 2.8f; else -> 2f }
@@ -55,6 +55,12 @@ class BasicAnimation(val kind: String, seed: Float, direction: Int) {
             pose.offsetY = -sin(phase) * 5
         }
         if (kind == "etoile") pose.angle = sin(phase * .12f) * 10
+        if (social) {
+            active = null
+            wait = 6f
+            pose.offsetY = 0f
+            return
+        }
         if (active == null) {
             wait -= delta
             if (wait <= 0) {

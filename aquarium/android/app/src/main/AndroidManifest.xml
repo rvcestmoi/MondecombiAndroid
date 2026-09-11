@@ -14,6 +14,7 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/scan_paths" />
         </provider>
         <activity android:name=".ScanActivity" android:exported="false" />
+        <activity android:name=".PaintActivity" android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

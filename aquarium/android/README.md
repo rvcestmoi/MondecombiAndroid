@@ -2,11 +2,10 @@
 
 Projet Android natif en Kotlin, premier jalon du portage du projet Python.
 
-État de la version 0.3 : repère de tête, animations sans squelette et correction
-des intérieurs transparents ajoutés au code. Les nouveaux tests sont écrits, mais
-cette révision reste à compiler et vérifier sur appareil : la validation automatique
-de la compilation a été bloquée par la limite d’utilisation. Les résultats de tests
-et l’APK déjà présents dans `build/` concernent la version précédente.
+État de la version 0.3 : repère de tête, animations sans squelette, correction
+des intérieurs transparents, réglages individuels, rencontres, duplication et atelier de dessin.
+Compilation debug et 90 tests locaux validés le 10 septembre 2026 ; lint : 0 erreur, 24 avertissements.
+La duplication et l’atelier de dessin restent à vérifier sur appareil.
 
 ## Ouvrir et lancer
 
@@ -63,7 +62,24 @@ Les mondes créés utilisent aussi le format ZIP Python, avec populations vides 
 aperçu PNG. Les fichiers originaux sélectionnés dans le sélecteur Android ne sont
 pas modifiés. Les ajouts modifient la copie privée du monde, après validation puis
 remplacement atomique du ZIP. Un exemple embarqué reçoit une copie locale sous le
-même identifiant. Le déplacement des animaux
+même identifiant. Le bouton **Animaux** affiche les dessins du monde avec leur
+miniature et ouvre leurs réglages : taille de 5 à 200 %, vitesse de 0 à 200 %,
+et suppression après confirmation. À 0 %, déplacement et animation sont figés.
+**Enregistrer** sauvegarde les réglages dans le ZIP ; **Annuler** les abandonne.
+Les animaux terrestres gardent leurs pieds à la même hauteur lors du redimensionnement.
+La suppression conserve les images encore utilisées par un autre animal.
+**Dupliquer cet animal** crée une copie indépendante avec le dessin, l’espèce,
+la taille, la vitesse et les métadonnées de l’original, placée à proximité.
+La copie est enregistrée dans le monde et peut être modifiée ou supprimée séparément.
+Les rencontres reprennent les règles de `aquarium.py` et `animaux_terrestres.py` :
+jeux, bisous et poursuites entre poissons ; jeux, bisous et sauts en prairie.
+Les oiseaux rencontrent seulement d’autres oiseaux. Les animaux proches forment
+des paires pendant quelques secondes, avec un délai de 5 à 9 secondes avant une
+autre rencontre. Les textes et cœurs signalent ces échanges. La pause fige les
+rencontres et les animaux à vitesse nulle n’y participent pas. Un changement de
+monde ou une suppression libère les partenaires. Ces rencontres restent sans squelette.
+
+Le déplacement des animaux
 pendant l’animation n’est pas encore enregistré dans les ZIP. Seuls les paramètres
 de consultation sont mémorisés séparément.
 
@@ -74,6 +90,16 @@ Le détourage s’effectue sur l’appareil. Les mondes sont dans le stockage pr
 désinstallation peut les supprimer. L’export sera ajouté avec la gestion complète.
 Limites d’import actuelles : 32 Mo par archive, 200 animaux, budget d’images décodées
 de 16 millions de pixels. Une archive invalide ne remplace pas le monde affiché.
+
+## Dessiner un animal dans l’application
+
+Dans **Ajouter un animal**, choisir **Dessiner un animal**. L’atelier propose
+neuf couleurs, un pinceau d’épaisseur réglable, une gomme, l’annulation du dernier
+trait et l’effacement du dessin après confirmation. Dessiner la tête à gauche et
+colorier l’intérieur : le damier représente les zones qui resteront transparentes.
+**Utiliser ce dessin** ouvre directement l’aperçu animé, sans détourage automatique.
+Choisir ensuite l’espèce et la taille, puis **Ajouter au monde**.
+Le brouillon reste disponible dans la session de création, y compris après rotation.
 
 ## Scanner un dessin
 
@@ -140,7 +166,7 @@ avec leur nombre d’animaux et empreinte SHA-256. Il ne modifie pas les origina
 
 ## Suite du portage complet
 
-1. Animations articulées et comportements/interactions des 22 espèces.
+1. Animations articulées des 22 espèces.
 2. Amélioration du scan à partir des essais sur de vrais dessins et appareils photo.
 3. Éditeur tactile des articulations et aperçu animé.
 4. Modification, duplication et suppression des animaux.

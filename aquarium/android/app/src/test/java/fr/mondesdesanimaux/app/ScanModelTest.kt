@@ -21,6 +21,32 @@ class ScanModelTest {
     @Test fun returningCameraPhotoWinsOverAnOlderDraftAfterProcessRecreation() = returningPhoto(true)
     @Test fun returningImportedPhotoWinsOverAnOlderDraftAfterProcessRecreation() = returningPhoto(false)
 
+    @Test fun paintedDrawingSurvivesReturnAndBecomesReadyToAddWithoutDetouring() {
+        val context = RuntimeEnvironment.getApplication()
+        val session = UUID.randomUUID().toString()
+        val directory = File(context.filesDir, "scan/$session").apply { mkdirs() }
+        val bitmap = Bitmap.createBitmap(40, 40, Bitmap.Config.ARGB_8888)
+        bitmap.setPixel(10, 10, Color.WHITE)
+        bitmap.setPixel(30, 30, Color.RED)
+        File(directory, "paint.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val model = ScanModel(context, "example.zip", Bundle().apply { putString("session", session); putBoolean("waitingPaint", true) })
+        try {
+            model.restore()
+            assertFalse(model.busy)
+            model.takePaintResult()
+            val deadline = System.nanoTime() + 10_000_000_000L
+            while (model.busy && System.nanoTime() < deadline) {
+                shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10)
+            }
+            assertFalse(model.busy)
+            assertNull(model.error)
+            assertEquals(Color.WHITE, model.cutout!!.getPixel(10, 10))
+            assertEquals(Color.RED, model.cutout!!.getPixel(30, 30))
+            assertEquals(0, Color.alpha(model.cutout!!.getPixel(20, 20)))
+            assertTrue(File(directory, "cutout.png").exists())
+        } finally { model.close(); bitmap.recycle() }
+    }
+
     private fun returningPhoto(camera: Boolean) {
         val context = RuntimeEnvironment.getApplication()
         val session = UUID.randomUUID().toString()

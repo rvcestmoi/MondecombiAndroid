@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.util.AtomicFile
 import java.io.File
 import java.io.InputStream
+import java.io.OutputStream
 
 object WorldRepository {
     private fun destination(context: Context, id: String): File {
@@ -23,11 +24,28 @@ object WorldRepository {
     @Synchronized
     fun addAnimal(context: Context, id: String, image: Bitmap, species: AnimalSpecies,
                   size: Float, x: Float, scanId: String) {
+        rewrite(context, id) { source, out -> WorldArchive.appendAnimal(source, out, image, species, size, x, scanId) }
+    }
+
+    @Synchronized
+    fun editAnimal(context: Context, id: String, habitat: String, index: Int,
+                   expectedRecord: String, size: Float, speed: Float, delete: Boolean) {
+        rewrite(context, id) { source, out ->
+            WorldArchive.editAnimal(source, out, habitat, index, expectedRecord, size, speed, delete)
+        }
+    }
+
+    @Synchronized
+    fun duplicateAnimal(context: Context, id: String, habitat: String, index: Int, expected: String, token: String) {
+        rewrite(context, id) { source, out -> WorldArchive.duplicateAnimal(source, out, habitat, index, expected, token) }
+    }
+
+    private fun rewrite(context: Context, id: String, transform: (InputStream, OutputStream) -> Unit) {
         val file = destination(context, id)
         val temporary = File.createTempFile("addition-", ".zip", file.parentFile)
         try {
             open(context, id).use { source ->
-                temporary.outputStream().use { out -> WorldArchive.appendAnimal(source, out, image, species, size, x, scanId) }
+                temporary.outputStream().use { out -> transform(source, out) }
             }
             require(temporary.length() <= WorldArchive.MAX_ARCHIVE_BYTES) { "Le monde dépasse la limite de 32 Mo." }
             val verified = temporary.inputStream().use { WorldArchive.read(it) }

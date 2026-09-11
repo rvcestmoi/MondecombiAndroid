@@ -21,6 +21,7 @@ class WorldView(context: Context) : View(context) {
     private var active = false
     private var lastFrame = 0L
     private var elapsed = 0f
+    private val interactions = AnimalInteractions()
     private var autoDirectionX = 1
     private var autoDirectionY = 1
     private var manualUntil = 0L
@@ -49,6 +50,7 @@ class WorldView(context: Context) : View(context) {
     }
 
     fun showWorld(value: AnimalWorld) {
+        interactions.clear()
         world = value
         camera.worldWidth = value.width
         camera.x = value.cameraX
@@ -99,16 +101,18 @@ class WorldView(context: Context) : View(context) {
             canvas.clipRect(0f, 0f, scene.width, WorldCamera.WORLD_HEIGHT)
             drawScenery(canvas, scene.width)
             scene.animals.forEach { drawAnimal(canvas, it) }
+            drawInteractions(canvas)
             canvas.restore()
         }
         if (active && isShown) postInvalidateOnAnimation()
     }
 
     private fun advance(scene: AnimalWorld, dt: Float, now: Long) {
+        interactions.update(scene.animals, dt, scene.width)
         for (animal in scene.animals) {
-            animal.animation.advance(dt, animal.width, animal.height, animal.direction)
+            animal.animation.advance(dt * animal.speed, animal.width, animal.height, animal.direction, animal.social)
             val speed = animal.animation.pose.speed * animal.speed
-            animal.x += animal.direction * speed * dt
+            if (!animal.social) animal.x += animal.direction * speed * dt
             val margin = animal.width / 2 + 20
             if (animal.x < margin) { animal.x = margin; animal.direction = 1 }
             if (animal.x > scene.width - margin) { animal.x = scene.width - margin; animal.direction = -1 }
@@ -191,7 +195,7 @@ class WorldView(context: Context) : View(context) {
         val pose = motion.pose
         val lower = animal.height / 2 + 5
         val upper = (if (animal.habitat == "mer" && !animal.isOnSand) 630f else 700f) - animal.height / 2
-        val localY = (animal.y + pose.offsetY).coerceIn(lower, max(lower, upper))
+        val localY = (animal.y + pose.offsetY - animal.socialJump).coerceIn(lower, max(lower, upper))
         val y = localY + if (animal.habitat == "prairie") WorldCamera.LAND_Y else 0f
         if (animal.x + animal.width * 2 < camera.x || animal.x - animal.width * 2 > camera.x + camera.visibleWidth ||
             y + animal.height * 2 < camera.y || y - animal.height * 2 > camera.y + camera.visibleHeight) return
@@ -209,6 +213,34 @@ class WorldView(context: Context) : View(context) {
         canvas.drawBitmapMesh(animal.image, BasicAnimation.COLUMNS, BasicAnimation.ROWS,
             animal.meshVertices, 0, null, 0, paint)
         canvas.restore()
+    }
+
+    private fun drawInteractions(canvas: Canvas) {
+        paint.textSize = 22f
+        paint.typeface = Typeface.DEFAULT_BOLD
+        paint.textAlign = Paint.Align.CENTER
+        for (pair in interactions.pairs) {
+            val a = pair.a; val b = pair.b
+            val x = (a.x + b.x) / 2
+            val y = min(a.y - a.height / 2 - a.socialJump, b.y - b.height / 2 - b.socialJump) - 24 +
+                if (pair.sea) 0f else WorldCamera.LAND_Y
+            val half = paint.measureText(pair.label) / 2 + 12
+            paint.color = Color.argb(210, 18, 59, 66)
+            canvas.drawRoundRect(x - half, y - 25, x + half, y + 8, 8f, 8f, paint)
+            paint.color = Color.rgb(255, 235, 185)
+            canvas.drawText(pair.label, x, y, paint)
+            if (pair.kind == "bisou" && pair.contact > 0) {
+                val heartY = y - 48 - pair.contact * 20
+                paint.color = Color.rgb(255, 100, 150)
+                canvas.drawCircle(x - 5, heartY, 7f, paint)
+                canvas.drawCircle(x + 5, heartY, 7f, paint)
+                path.reset()
+                path.moveTo(x - 11, heartY + 2); path.lineTo(x + 11, heartY + 2)
+                path.lineTo(x, heartY + 15); path.close()
+                canvas.drawPath(path, paint)
+            }
+        }
+        paint.textAlign = Paint.Align.LEFT
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

@@ -43,6 +43,9 @@ data class WorldAnimal(
     val headLeft = original.optJSONObject("rig")?.optBoolean("head_left", true) ?: true
     val animation = BasicAnimation(kind, phase, direction)
     val meshVertices = FloatArray(BasicAnimation.VERTEX_FLOATS)
+    var social = false
+    var socialJump = 0f
+    var socialCooldown = 1f + phase % 2f
 }
 
 data class AnimalWorld(
@@ -109,7 +112,7 @@ object WorldArchive {
                     val x = record.finite("x", 600f).coerceIn(0f, screens * 1200f)
                     val y = record.finite("y", 350f).coerceIn(0f, 700f)
                     val size = record.finite("size", 1f).coerceIn(.05f, 2f)
-                    val speed = record.finite("speed", 1f).coerceIn(.05f, 2f)
+                    val speed = record.finite("speed", 1f).coerceIn(0f, 2f)
                     val ground = if (record.has("ground")) record.finite("ground", 600f) else null
                     options.inJustDecodeBounds = false
                     val bitmap = BitmapFactory.decodeByteArray(encoded, 0, encoded.size, options)
@@ -180,6 +183,93 @@ object WorldArchive {
             writeEntries(nested, files)
             outer["$habitat.zip"] = nested.toByteArray()
         }
+        writeEntries(output, outer)
+    }
+
+    /** Edit one exact record, including old imports without scan IDs. A stale
+     * selection must fail rather than modify a different animal after deletion. */
+    fun editAnimal(input: InputStream, output: OutputStream, habitat: String, index: Int,
+                   expectedRecord: String, size: Float, speed: Float, delete: Boolean) {
+        require(habitat == "mer" || habitat == "prairie") { "Habitat invalide." }
+        require(size.isFinite() && size in .05f..2f && speed.isFinite() && speed in 0f..2f) {
+            "Taille ou vitesse invalide."
+        }
+        val outer = entries(input).toMutableMap()
+        val files = entries(ByteArrayInputStream(required(outer, "$habitat.zip"))).toMutableMap()
+        val manifest = if (habitat == "mer") "aquarium.json" else "prairie.json"
+        val population = json(files, manifest)
+        val records = population.getJSONArray("fishes")
+        require(index in 0 until records.length() && records.getJSONObject(index).toString() == expectedRecord) {
+            "Cet animal a changé. Rouvre le monde avant de réessayer."
+        }
+        val record = records.getJSONObject(index)
+        if (delete) {
+            records.remove(index)
+            val imageName = record.getString("image")
+            // Imported animals can share the same PNG.
+            if ((0 until records.length()).none { records.getJSONObject(it).getString("image") == imageName }
+                && imageName.endsWith(".png", ignoreCase = true)) files.remove(imageName)
+        } else {
+            // Preserve the foot position when resizing a ground animal.
+            val kind = record.getString("kind")
+            val grounded = habitat == "prairie" && kind !in setOf("perroquet", "pigeon", "moineau", "aigle") ||
+                kind == "crabe" || kind == "etoile"
+            if (grounded && size != record.finite("size", 1f).coerceIn(.05f, 2f)) {
+                val encoded = required(files, record.getString("image"))
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true; inSampleSize = 1 }
+                BitmapFactory.decodeByteArray(encoded, 0, encoded.size, bounds)
+                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Dessin illisible." }
+                val box = if (kind == "crabe") 160f to 110f else if (kind == "etoile") 130f to 130f else 200f to 180f
+                val baseHeight = bounds.outHeight * min(box.first / bounds.outWidth, box.second / bounds.outHeight)
+                val oldSize = record.finite("size", 1f).coerceIn(.05f, 2f)
+                record.put("y", (record.finite("y", 350f) + baseHeight / 2 * (oldSize - size)).coerceIn(0f, 700f))
+            }
+            record.put("size", size).put("speed", speed)
+        }
+        files[manifest] = population.toString().toByteArray(Charsets.UTF_8)
+        val nested = ByteArrayOutputStream()
+        writeEntries(nested, files)
+        outer["$habitat.zip"] = nested.toByteArray()
+        writeEntries(output, outer)
+    }
+
+    fun duplicateAnimal(input: InputStream, output: OutputStream, habitat: String, index: Int,
+                        expectedRecord: String, token: String) {
+        require(habitat in listOf("mer", "prairie") && token.matches(Regex("[a-zA-Z0-9-]{1,80}")))
+        val outer = entries(input).toMutableMap()
+        var count = 0
+        for (area in listOf("mer", "prairie")) {
+            val population = json(entries(ByteArrayInputStream(required(outer, "$area.zip"))),
+                if (area == "mer") "aquarium.json" else "prairie.json")
+            val records = population.getJSONArray("fishes")
+            count += records.length()
+            for (i in 0 until records.length()) if (records.getJSONObject(i).optString("scan_id") == token) {
+                writeEntries(output, outer)
+                return
+            }
+        }
+        require(count < MAX_ANIMALS) { "Ce monde contient déjà $MAX_ANIMALS animaux." }
+        val files = entries(ByteArrayInputStream(required(outer, "$habitat.zip"))).toMutableMap()
+        val manifest = if (habitat == "mer") "aquarium.json" else "prairie.json"
+        val population = json(files, manifest)
+        val records = population.getJSONArray("fishes")
+        require(index in 0 until records.length() && records.getJSONObject(index).toString() == expectedRecord) {
+            "Cet animal a changé. Rouvre le monde avant de réessayer."
+        }
+        val original = records.getJSONObject(index)
+        val copy = JSONObject(original.toString())
+        val name = "copy_$token.png"
+        require(!files.containsKey(name)) { "Ce dessin existe déjà." }
+        files[name] = required(files, original.getString("image"))
+        val width = json(outer, "world.json").getJSONObject("settings").optInt("screens", 1).coerceIn(1, 5) * 1200f
+        val x = original.finite("x", 600f)
+        copy.put("image", name).put("scan_id", token)
+            .put("x", (if (x + 220 < width - 220) x + 220 else x - 220).coerceIn(220f, width - 220))
+        records.put(copy)
+        files[manifest] = population.toString().toByteArray(Charsets.UTF_8)
+        val nested = ByteArrayOutputStream()
+        writeEntries(nested, files)
+        outer["$habitat.zip"] = nested.toByteArray()
         writeEntries(output, outer)
     }
 
